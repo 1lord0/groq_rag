@@ -58,11 +58,14 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        # Eğer bu mesajda kaynak bilgisi saklanmışsa onu da göster (Opsiyonel)
-        if "sources" in message:
-            with st.expander("📚 Kaynaklar"):
-                for source in message["sources"]:
-                    st.write(f"- {source}")
+        
+        # GEÇMİŞ MESAJLARDAKİ KAYNAK İÇERİĞİNİ GÖSTER
+        if "source_details" in message:
+            with st.expander("📚 Kaynak İçeriğini Göster"):
+                for item in message["source_details"]:
+                    st.markdown(f"**📄 {item['source']} (Sayfa: {item['page']})**")
+                    st.info(item['content']) # Metni gri kutuda gösterir
+                    st.markdown("---")
 
 # --- 5. SORU CEVAP ALANI ---
 if prompt := st.chat_input("Sorunuzu yazın..."):
@@ -83,20 +86,22 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
                 
             context = "\n".join([doc.page_content for doc in docs])
             
-            # --- YENİ EKLENEN KISIM: KAYNAKLARI ÇEK ---
-            source_list = []
+            # --- YENİ KISIM: KAYNAK DETAYLARINI HAZIRLA ---
+            source_details = []
             for doc in docs:
-                # Metadata içinden dosya yolunu al
+                # Metadata ve İçerik Çekme
                 full_source = doc.metadata.get("source", "Bilinmeyen Kaynak")
-                # Sadece dosya ismini al (Örn: /data/kitap.pdf -> kitap.pdf)
                 file_name = os.path.basename(full_source)
-                # Sayfa numarasını al
                 page_num = doc.metadata.get("page", int(doc.metadata.get("page_label", 0)) if "page_label" in doc.metadata else "?")
+                content_text = doc.page_content
                 
-                source_info = f"{file_name} (Sayfa: {page_num})"
-                if source_info not in source_list:
-                    source_list.append(source_info)
-            # -------------------------------------------
+                # Listeye sözlük olarak ekle
+                source_details.append({
+                    "source": file_name,
+                    "page": page_num,
+                    "content": content_text
+                })
+            # ----------------------------------------------
 
             # B) Mesajları hazırla
             messages = [
@@ -110,17 +115,19 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
             # D) Cevabı yazdır
             st.markdown(response.content)
             
-            # E) Kaynakları Şık Bir Kutuda Göster
-            if source_list:
-                with st.expander("📚 Kullanılan Kaynaklar"):
-                    for src in source_list:
-                        st.write(f"- {src}")
+            # E) Kaynakları ve İÇERİKLERİNİ Göster
+            if source_details:
+                with st.expander("📚 Kaynak İçeriğini İncele"):
+                    for item in source_details:
+                        st.markdown(f"**📄 {item['source']} (Sayfa: {item['page']})**")
+                        st.info(item['content']) # PDF'ten gelen metni burada basıyoruz
+                        st.markdown("---")
 
-            # F) Geçmişe kaydet (Kaynaklarla birlikte)
+            # F) Geçmişe kaydet
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": response.content,
-                "sources": source_list # Geçmişe de kaynakları ekledik
+                "source_details": source_details # Detaylı bilgiyi sakla
             })
             
         except Exception as e:
