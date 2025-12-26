@@ -6,3 +6,4 @@ langchain-huggingface
 langchain-groq
 faiss-cpu
 huggingface-hub
+sentence-transformers
