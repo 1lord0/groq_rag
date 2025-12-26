@@ -23,7 +23,7 @@ def load_resources():
         # Embedding Modeli
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         
-        # Dosya yolunu tam bulmak için (Hata almamak adına)
+        # Dosya yolunu tam bulmak için
         current_dir = os.path.dirname(os.path.abspath(__file__))
         vector_path = os.path.join(current_dir, "vector_deposu")
         
@@ -42,7 +42,7 @@ def load_resources():
 vector_db = load_resources()
 
 if not vector_db:
-    st.stop() # Veritabanı yoksa uygulamayı durdur
+    st.stop()
 
 # --- 3. LLM (GROQ) AYARI ---
 llm = ChatGroq(
@@ -58,11 +58,15 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        # Eğer bu mesajda kaynak bilgisi saklanmışsa onu da göster (Opsiyonel)
+        if "sources" in message:
+            with st.expander("📚 Kaynaklar"):
+                for source in message["sources"]:
+                    st.write(f"- {source}")
 
 # --- 5. SORU CEVAP ALANI ---
-# DİKKAT: Aşağıdaki kodların hepsi 'if' bloğunun içinde olmalı!
 if prompt := st.chat_input("Sorunuzu yazın..."):
-    # Kullanıcı mesajını ekle ve göster
+    # Kullanıcı mesajını ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -79,19 +83,9 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
                 
             context = "\n".join([doc.page_content for doc in docs])
             
-            # B) Mesajları hazırla (Liste formatında)
-            messages = [
-                SystemMessage(content=f"Sen yardımcı bir asistansın. Aşağıdaki bağlama göre cevap ver:\n\n{context}"),
-                HumanMessage(content=prompt)
-            ]
-            
-            # C) Groq'a gönder
-            response = llm.invoke(messages)
-            
-            # D) Cevabı yazdır
-            st.markdown(response.content)
-            st.session_state.messages.append({"role": "assistant", "content": response.content})
-            
-        except Exception as e:
-            st.error(f"Bir hata oluştu: {e}")
-
+            # --- YENİ EKLENEN KISIM: KAYNAKLARI ÇEK ---
+            source_list = []
+            for doc in docs:
+                # Metadata içinden dosya yolunu al
+                full_source = doc.metadata.get("source", "Bilinmeyen Kaynak")
+                # Sadece dosya
