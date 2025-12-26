@@ -8,7 +8,7 @@ embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 def load_rag_system():
     # GitHub'a yüklediğin klasör ismini buraya yazıyoruz
     vector_store = FAISS.load_local(
-        "my_faiss_index", 
+        "vector_deposu", 
         embeddings, 
         allow_dangerous_deserialization=True # FAISS yüklemesi için bu şarttır
     )
@@ -16,3 +16,4 @@ def load_rag_system():
 
 # Sistemi başlat
 vector_db = load_rag_system()
+
