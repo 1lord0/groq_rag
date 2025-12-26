@@ -7,27 +7,23 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="RAG Asistanı", layout="centered")
-st.title("🤖 Boran Tarzı RAG Asistanı")
+st.title("🤖 RAG Asistanı (Debug Modu)")
 
-# --- 1. API ANAHTARI KONTROLÜ ---
+# --- 1. API ANAHTARI ---
 try:
     api_key = st.secrets["GROQ_API_KEY"]
 except:
-    st.error("GROQ_API_KEY bulunamadı! Lütfen Streamlit Secrets kısmına ekleyin.")
+    st.error("Lütfen Streamlit Secrets kısmına GROQ_API_KEY ekleyin.")
     st.stop()
 
-# --- 2. MODEL VE VEKTÖR DEPOSUNU YÜKLEME ---
+# --- 2. YÜKLEME ---
 @st.cache_resource
 def load_resources():
     try:
-        # Embedding Modeli
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        
-        # Dosya yolunu tam bulmak için
         current_dir = os.path.dirname(os.path.abspath(__file__))
         vector_path = os.path.join(current_dir, "vector_deposu")
         
-        # Vektör Veritabanını Yükle
         vector_store = FAISS.load_local(
             vector_path, 
             embeddings, 
@@ -35,100 +31,71 @@ def load_resources():
         )
         return vector_store
     except Exception as e:
-        st.error(f"Veritabanı yüklenirken hata oluştu: {e}")
+        st.error(f"Sistem Yükleme Hatası: {e}")
         return None
 
-# Kaynakları yükle
 vector_db = load_resources()
+if not vector_db: st.stop()
 
-if not vector_db:
-    st.stop()
+# --- 3. MODEL ---
+llm = ChatGroq(groq_api_key=api_key, model_name="llama-3.1-8b-instant")
 
-# --- 3. LLM (GROQ) AYARI ---
-llm = ChatGroq(
-    groq_api_key=api_key, 
-    model_name="llama-3.1-8b-instant"
-)
-
-# --- 4. SOHBET ARAYÜZÜ ---
+# --- 4. SOHBET GEÇMİŞİ ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Eski mesajları ekrana yazdır
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        
-        # GEÇMİŞ MESAJLARDAKİ KAYNAK İÇERİĞİNİ GÖSTER
-        if "source_details" in message:
-            with st.expander("📚 Kaynak İçeriğini Göster"):
-                for item in message["source_details"]:
-                    st.markdown(f"**📄 {item['source']} (Sayfa: {item['page']})**")
-                    st.info(item['content']) # Metni gri kutuda gösterir
-                    st.markdown("---")
 
-# --- 5. SORU CEVAP ALANI ---
+# --- 5. İŞLEM ---
 if prompt := st.chat_input("Sorunuzu yazın..."):
-    # Kullanıcı mesajını ekle
+    # Kullanıcı mesajını göster
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Cevap Üretimi
+    # Asistan cevaplıyor
     with st.chat_message("assistant"):
         try:
-            # A) Benzer dökümanları bul
+            # A) Chunkları Getir (Similarity Search)
             docs = vector_db.similarity_search(prompt, k=2)
             
-            if not docs:
-                st.warning("Bu konuyla ilgili dökümanda bilgi bulunamadı.")
-                st.stop()
+            # --- DEBUG: Ekrana Chunkları Basıyoruz (Cevaptan Önce Görelim) ---
+            st.markdown("### 🔍 Yapay Zekanın Okuduğu Parçalar (Chunks):")
+            
+            context_text = ""
+            for i, doc in enumerate(docs):
+                # Metadata'yı güvenli çekelim
+                source_name = os.path.basename(doc.metadata.get("source", "Bilinmiyor"))
+                page_label = doc.metadata.get("page", doc.metadata.get("page_label", "-"))
                 
-            context = "\n".join([doc.page_content for doc in docs])
-            
-            # --- YENİ KISIM: KAYNAK DETAYLARINI HAZIRLA ---
-            source_details = []
-            for doc in docs:
-                # Metadata ve İçerik Çekme
-                full_source = doc.metadata.get("source", "Bilinmeyen Kaynak")
-                file_name = os.path.basename(full_source)
-                page_num = doc.metadata.get("page", int(doc.metadata.get("page_label", 0)) if "page_label" in doc.metadata else "?")
-                content_text = doc.page_content
+                # Chunk İçeriği
+                chunk_content = doc.page_content
                 
-                # Listeye sözlük olarak ekle
-                source_details.append({
-                    "source": file_name,
-                    "page": page_num,
-                    "content": content_text
-                })
-            # ----------------------------------------------
+                # Context'e ekle
+                context_text += chunk_content + "\n\n"
 
-            # B) Mesajları hazırla
-            messages = [
-                SystemMessage(content=f"Sen yardımcı bir asistansın. Aşağıdaki bağlama göre cevap ver:\n\n{context}"),
-                HumanMessage(content=prompt)
-            ]
-            
-            # C) Groq'a gönder
-            response = llm.invoke(messages)
-            
-            # D) Cevabı yazdır
-            st.markdown(response.content)
-            
-            # E) Kaynakları ve İÇERİKLERİNİ Göster
-            if source_details:
-                with st.expander("📚 Kaynak İçeriğini İncele"):
-                    for item in source_details:
-                        st.markdown(f"**📄 {item['source']} (Sayfa: {item['page']})**")
-                        st.info(item['content']) # PDF'ten gelen metni burada basıyoruz
-                        st.markdown("---")
+                # Ekrana Bas (Kutu İçinde)
+                st.info(f"**📄 Kaynak {i+1}:** {source_name} (Sayfa: {page_label})\n\n---\n\n{chunk_content}")
 
-            # F) Geçmişe kaydet
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": response.content,
-                "source_details": source_details # Detaylı bilgiyi sakla
-            })
-            
+            # B) Cevap Üret
+            if not context_text.strip():
+                st.warning("Veritabanında ilgili bilgi bulunamadı!")
+            else:
+                messages = [
+                    SystemMessage(content=f"Sen bir asistanın. Sadece şu metne bakarak cevap ver:\n{context_text}"),
+                    HumanMessage(content=prompt)
+                ]
+                
+                response = llm.invoke(messages)
+                
+                # C) Cevabı Göster
+                st.markdown("### 🤖 Cevap:")
+                st.markdown(response.content)
+                
+                # Geçmişe kaydet
+                st.session_state.messages.append({"role": "assistant", "content": response.content})
+
         except Exception as e:
-            st.error(f"Bir hata oluştu: {e}")
+            st.error(f"Hata oluştu: {e}")
