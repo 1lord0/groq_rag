@@ -5,7 +5,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 class BelgeAracı:
     def __init__(self, yol):
         self.klasor_yolu = yol
-        # Embeddings modelini bir kez başlatıyoruz ki her seferinde yüklenmesin
+        # Embeddings modelini bir kez başlatıyoruz
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
     def parcala_ve_hazırla(self):
@@ -30,32 +30,31 @@ class BelgeAracı:
                 print(f"{dosya} okunurken hata oluştu: {e}")
 
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1200, # Senin istediğin büyük parçalar
+            chunk_size=1200, 
             chunk_overlap=200
         )
         chunks = text_splitter.split_documents(docs)
-        print(f"Başarıyla {len(chunks)} parça oluşturuldu.")
         return chunks
 
     def index_olusturma(self, parcalar):
-        """Vektör veritabanını oluşturur ve yerel klasöre kaydeder."""
         if not parcalar:
             return
         db = FAISS.from_documents(parcalar, self.embeddings)
         db.save_local("vector_deposu")
-        print("Vektör veritabanı 'vector_deposu' klasörüne kaydedildi.")
 
-    def soru_sor(self, query, k=5): # k=5 yaparak daha çok metin getiriyoruz
+    def soru_sor(self, query, k=5):
         try:
-            # Vektör deposunu yükle
-            import os
-
+            # Klasör yolunu tam tanımlıyoruz
             current_dir = os.path.dirname(os.path.abspath(__file__))
             vector_store_path = os.path.join(current_dir, "vector_deposu")
 
-            # Yükleme satırını buna çevir:
-            db = FAISS.load_local(vector_store_path, embeddings, allow_dangerous_deserialization=True)
-            # Benzerlik araması yap
+            # HATA DÜZELTMESİ: self.embeddings kullanmalısın
+            db = FAISS.load_local(
+                vector_store_path, 
+                self.embeddings, 
+                allow_dangerous_deserialization=True
+            )
+            
             return db.similarity_search(query, k=k)
         except Exception as e:
             print(f"Arama hatası: {e}")
@@ -66,10 +65,9 @@ class BelgeAracı:
         from langchain_core.prompts import ChatPromptTemplate
         
         if not kaynaklar:
-            return "Hata: Bilgi bulunamadı."
+            return "Hata: Aranan konuyla ilgili dökümanda bilgi bulunamadı."
 
         try:
-            # API anahtarını dışarıdan (Streamlit'ten) alıyoruz
             llm = ChatGroq(
                 temperature=0, 
                 model_name="llama-3.1-8b-instant", 
@@ -78,6 +76,8 @@ class BelgeAracı:
             
             context = "\n\n".join([doc.page_content for doc in kaynaklar])
             template = """Sen yardımcı bir asistansın. Kaynaklara dayanarak soruyu cevapla.
+            Cevap verirken samimi ve açıklayıcı ol.
+            
             Kaynaklar: {context}
             Soru: {soru}
             Cevap:"""
@@ -88,4 +88,3 @@ class BelgeAracı:
             return sonuc.content
         except Exception as e:
             return f"Sistem hatası: {str(e)}"
-
