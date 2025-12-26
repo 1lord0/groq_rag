@@ -47,7 +47,7 @@ if not vector_db:
 # --- 3. LLM (GROQ) AYARI ---
 llm = ChatGroq(
     groq_api_key=api_key, 
-    model_name="llama3-8b-8192"
+    model_name="llama-3.1-8b-instant"
 )
 
 # --- 4. SOHBET ARAYÜZÜ ---
@@ -94,3 +94,4 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
             
         except Exception as e:
             st.error(f"Bir hata oluştu: {e}")
+
