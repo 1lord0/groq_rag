@@ -2,79 +2,71 @@ import streamlit as st
 import os
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from groq import Groq
+from langchain_groq import ChatGroq
+from langchain.prompts import PromptTemplate
 
-# --- AYARLAR VE GÜVENLİK ---
-# Streamlit Cloud'da 'Settings > Secrets' kısmına GROQ_API_KEY eklemeyi unutma!
-api_key = st.secrets.get("GROQ_API_KEY") 
-client = Groq(api_key=api_key)
+# Sayfa Ayarları
+st.set_page_config(page_title="RAG Asistanı")
+st.title("RAG Asistanı")
 
-# --- MODEL VE VERİTABANI YÜKLEME ---
-@st.cache_resource # Sayfa her yenilendiğinde modeli tekrar yüklemez, hız kazandırır
-def load_system():
-    try:
-        # 1. Embedding Modelini Yükle
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        
-        # 2. Vektör Deposunu Yükle (Klasör ismin: vector_deposu)
-        vector_db = FAISS.load_local(
-            "vector_deposu", 
-            embeddings, 
-            allow_dangerous_deserialization=True
-        )
-        return vector_db
-    except Exception as e:
-        st.error(f"Sistem yüklenirken hata oluştu: {e}")
-        return None
+# 1. API Anahtarı Ayarı (Streamlit Secrets'tan çeker)
+# Eğer lokalde çalışıyorsan buraya direkt string olarak yazabilirsin test için: api_key = "gsk_..."
+try:
+    api_key = st.secrets["GROQ_API_KEY"]
+except:
+    st.error("GROQ_API_KEY bulunamadı! Lütfen Streamlit Secrets kısmına ekleyin.")
+    st.stop()
 
-# --- CEVAP ÜRETME FONKSİYONU ---
-def get_ai_response(user_query, vector_db):
-    try:
+# 2. Modeli ve Vektör Deposunu Yükle (Cache kullanarak hızlandırıyoruz)
+@st.cache_resource
+def load_resources():
+    # Embedding Modeli
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+    # Vektör Veritabanı (Senin klasör ismin: vector_deposu)
+    vector_store = FAISS.load_local(
+        "vector_deposu", 
+        embeddings, 
+        allow_dangerous_deserialization=True
+    )
+    return vector_store
+
+# 3. Yüklemeyi Başlat
+try:
+    vector_db = load_resources()
+except Exception as e:
+    st.error(f"Veritabanı yüklenirken hata oluştu: {e}")
+    st.stop()
+
+# 4. LLM (Groq) Ayarı
+llm = ChatGroq(
+    groq_api_key=api_key, 
+    model_name="llama3-8b-8192"
+)
+
+# 5. Sohbet Arayüzü
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+
+if prompt := st.chat_input("Sorunuzu yazın..."):
+    # Kullanıcı mesajını ekle
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
+
+    # Cevap Üretimi
+    with st.chat_message("assistant"):
         # Benzer dökümanları bul
-        docs = vector_db.similarity_search(user_query, k=3)
+        docs = vector_db.similarity_search(prompt, k=3)
         context = "\n".join([doc.page_content for doc in docs])
         
-        # Groq ile cevap üret
-        completion = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[
-                {"role": "system", "content": f"Sen bir asistansın. Verilen bağlama göre cevap ver: {context}"},
-                {"role": "user", "content": user_query}
-            ],
-            temperature=0.7,
-        )
-        return completion.choices[0].message.content
-    except Exception as e:
-        return f"Cevap üretilemedi: {e}"
-
-# --- STREAMLIT ARAYÜZÜ ---
-def main():
-    st.set_page_config(page_title="RAG Asistanı", page_icon="🤖")
-    st.title("🤖 Boran Tarzı RAG Sistemi")
-    st.markdown("---")
-
-    vector_db = load_system()
-
-    if vector_db:
-        # Sohbet Geçmişi Başlat (Opsiyonel)
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-
-        # Eski mesajları göster
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        # Kullanıcıdan soru al
-        if prompt := st.chat_input("Döküman hakkında bir şey sorun..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            with st.chat_message("assistant"):
-                response = get_ai_response(prompt, vector_db)
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-
-if __name__ == "__main__":
-    main()
+        # Modele Prompt Ver
+        system_prompt = f"Aşağıdaki bağlama göre soruyu cevapla:\n\nBağlam: {context}\n\nSoru: {prompt}"
+        response = llm.invoke(system_prompt)
+        
+        st.write(response.content)
+        st.session_state.messages.append({"role": "assistant", "content": response.content})
