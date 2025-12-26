@@ -8,7 +8,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 # --- SAYFA AYARLARI ---
 st.set_page_config(page_title="RAG Debugger", layout="centered")
 st.title("🛠️ RAG Debug Modu: Chunk Kontrolü")
-st.info("Bu modda, yapay zekanın okuduğu metinleri (chunk) cevaptan önce görebilirsin.")
+
 
 # --- 1. API ANAHTARI ---
 try:
@@ -124,3 +124,4 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
 
         except Exception as e:
             st.error(f"Hata oluştu: {e}")
+st.info("Bu modda, yapay zekanın okuduğu metinleri (chunk) cevaptan önce görebilirsin.")
