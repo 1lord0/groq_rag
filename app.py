@@ -3,7 +3,7 @@ import os
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 # Sayfa Ayarları
 st.set_page_config(page_title="RAG Asistanı")
@@ -70,3 +70,4 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
         
         st.write(response.content)
         st.session_state.messages.append({"role": "assistant", "content": response.content})
+
