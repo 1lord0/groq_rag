@@ -48,11 +48,13 @@ class BelgeAracı:
     def soru_sor(self, query, k=5): # k=5 yaparak daha çok metin getiriyoruz
         try:
             # Vektör deposunu yükle
-            db = FAISS.load_local(
-                "vector_deposu", 
-                self.embeddings, 
-                allow_dangerous_deserialization=True
-            )
+            import os
+
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            vector_store_path = os.path.join(current_dir, "vector_deposu")
+
+            # Yükleme satırını buna çevir:
+            db = FAISS.load_local(vector_store_path, embeddings, allow_dangerous_deserialization=True)
             # Benzerlik araması yap
             return db.similarity_search(query, k=k)
         except Exception as e:
@@ -86,3 +88,4 @@ class BelgeAracı:
             return sonuc.content
         except Exception as e:
             return f"Sistem hatası: {str(e)}"
+
