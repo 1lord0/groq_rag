@@ -4,7 +4,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
-
+from langchain_core.messages import SystemMessage, HumanMessage
 
 # --- DEBUG KISMI BAŞLANGIÇ ---
 st.write("📂 Mevcut Çalışma Dizini:", os.getcwd())
@@ -64,11 +64,28 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-if prompt := st.chat_input("Sorunuzu yazın..."):
-    # Kullanıcı mesajını ekle
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.write(prompt)
+# Cevap Üretimi
+    with st.chat_message("assistant"):
+        # 1. Benzer dökümanları bul (k sayısını 3'ten 2'ye düşürdük ki hafıza dolmasın)
+        docs = vector_db.similarity_search(prompt, k=2)
+        
+        # Context'i oluştur
+        context = "\n".join([doc.page_content for doc in docs])
+        
+        # 2. Mesajları Profesyonelce Yapılandır (String yerine Liste kullanıyoruz)
+        messages = [
+            SystemMessage(content=f"Sen uzman bir asistansın. Sadece aşağıdaki bağlama göre cevap ver. Bağlam:\n\n{context}"),
+            HumanMessage(content=prompt)
+        ]
+        
+        # 3. Groq'a gönder
+        try:
+            response = llm.invoke(messages)
+            st.write(response.content)
+            st.session_state.messages.append({"role": "assistant", "content": response.content})
+        except Exception as e:
+            st.error(f"Groq API Hatası: {e}")
+            st.info("İpucu: Döküman çok uzun olabilir veya API kotası dolmuş olabilir.")
 
     # Cevap Üretimi
     with st.chat_message("assistant"):
@@ -82,5 +99,6 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
         
         st.write(response.content)
         st.session_state.messages.append({"role": "assistant", "content": response.content})
+
 
 
