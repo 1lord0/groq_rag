@@ -6,8 +6,9 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="RAG Asistanı", layout="centered")
-st.title("🤖 RAG Asistanı (Debug Modu)")
+st.set_page_config(page_title="RAG Debugger", layout="centered")
+st.title("🛠️ RAG Debug Modu: Chunk Kontrolü")
+st.info("Bu modda, yapay zekanın okuduğu metinleri (chunk) cevaptan önce görebilirsin.")
 
 # --- 1. API ANAHTARI ---
 try:
@@ -47,10 +48,17 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        # Geçmişte kullanılan chunkları da göster (Gri kutuda)
+        if "chunks" in message:
+            with st.expander("🔍 Bu cevap için okunan metinleri gör"):
+                for chunk in message["chunks"]:
+                    st.caption(f"📄 {chunk['source']} (Sayfa: {chunk['page']})")
+                    st.text(chunk['content']) # Metni ham haliyle basar
+                    st.divider()
 
 # --- 5. İŞLEM ---
 if prompt := st.chat_input("Sorunuzu yazın..."):
-    # Kullanıcı mesajını göster
+    # Kullanıcı mesajını ekle
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -58,44 +66,61 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
     # Asistan cevaplıyor
     with st.chat_message("assistant"):
         try:
-            # A) Chunkları Getir (Similarity Search)
+            # A) Chunkları Getir
             docs = vector_db.similarity_search(prompt, k=2)
             
-            # --- DEBUG: Ekrana Chunkları Basıyoruz (Cevaptan Önce Görelim) ---
-            st.markdown("### 🔍 Yapay Zekanın Okuduğu Parçalar (Chunks):")
-            
             context_text = ""
+            found_chunks = []
+
+            # --- DEBUG: BULUNAN METİNLERİ CANLI GÖSTER ---
+            st.markdown("##### 🔎 Yapay Zeka Şu Metinleri Okuyor:")
+            
             for i, doc in enumerate(docs):
-                # Metadata'yı güvenli çekelim
-                source_name = os.path.basename(doc.metadata.get("source", "Bilinmiyor"))
+                # Dosya adını temizle
+                full_path = doc.metadata.get("source", "Bilinmiyor")
+                file_name = os.path.basename(full_path)
                 page_label = doc.metadata.get("page", doc.metadata.get("page_label", "-"))
                 
-                # Chunk İçeriği
+                # Metni al
                 chunk_content = doc.page_content
                 
-                # Context'e ekle
+                # Ekrana bas (Kullanıcı burada kontrol edecek)
+                with st.container(border=True):
+                    st.markdown(f"**Parça {i+1}** - *{file_name} (Sayfa: {page_label})*")
+                    st.code(chunk_content, language="text") # Metni kod bloğu gibi net gösterir
+                
+                # Listeye ekle
                 context_text += chunk_content + "\n\n"
-
-                # Ekrana Bas (Kutu İçinde)
-                st.info(f"**📄 Kaynak {i+1}:** {source_name} (Sayfa: {page_label})\n\n---\n\n{chunk_content}")
+                found_chunks.append({
+                    "source": file_name,
+                    "page": page_label,
+                    "content": chunk_content
+                })
 
             # B) Cevap Üret
             if not context_text.strip():
-                st.warning("Veritabanında ilgili bilgi bulunamadı!")
+                st.warning("⚠️ Veritabanında bu soruyla ilgili hiçbir metin bulunamadı!")
+                response_text = "Veri tabanında bilgi yok."
             else:
                 messages = [
-                    SystemMessage(content=f"Sen bir asistanın. Sadece şu metne bakarak cevap ver:\n{context_text}"),
+                    SystemMessage(content=f"Sen bir asistanın. Sadece sana verilen şu metne sadık kalarak cevap ver:\n{context_text}"),
                     HumanMessage(content=prompt)
                 ]
                 
-                response = llm.invoke(messages)
+                with st.spinner("Cevap hazırlanıyor..."):
+                    response = llm.invoke(messages)
+                    response_text = response.content
                 
                 # C) Cevabı Göster
-                st.markdown("### 🤖 Cevap:")
-                st.markdown(response.content)
+                st.markdown("### 💡 Cevap:")
+                st.markdown(response_text)
                 
-                # Geçmişe kaydet
-                st.session_state.messages.append({"role": "assistant", "content": response.content})
+                # Geçmişe kaydet (Chunklarla beraber)
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": response_text,
+                    "chunks": found_chunks
+                })
 
         except Exception as e:
             st.error(f"Hata oluştu: {e}")
