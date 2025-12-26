@@ -88,4 +88,40 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
             for doc in docs:
                 # Metadata içinden dosya yolunu al
                 full_source = doc.metadata.get("source", "Bilinmeyen Kaynak")
-                # Sadece dosya
+                # Sadece dosya ismini al (Örn: /data/kitap.pdf -> kitap.pdf)
+                file_name = os.path.basename(full_source)
+                # Sayfa numarasını al
+                page_num = doc.metadata.get("page", int(doc.metadata.get("page_label", 0)) if "page_label" in doc.metadata else "?")
+                
+                source_info = f"{file_name} (Sayfa: {page_num})"
+                if source_info not in source_list:
+                    source_list.append(source_info)
+            # -------------------------------------------
+
+            # B) Mesajları hazırla
+            messages = [
+                SystemMessage(content=f"Sen yardımcı bir asistansın. Aşağıdaki bağlama göre cevap ver:\n\n{context}"),
+                HumanMessage(content=prompt)
+            ]
+            
+            # C) Groq'a gönder
+            response = llm.invoke(messages)
+            
+            # D) Cevabı yazdır
+            st.markdown(response.content)
+            
+            # E) Kaynakları Şık Bir Kutuda Göster
+            if source_list:
+                with st.expander("📚 Kullanılan Kaynaklar"):
+                    for src in source_list:
+                        st.write(f"- {src}")
+
+            # F) Geçmişe kaydet (Kaynaklarla birlikte)
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": response.content,
+                "sources": source_list # Geçmişe de kaynakları ekledik
+            })
+            
+        except Exception as e:
+            st.error(f"Bir hata oluştu: {e}")
