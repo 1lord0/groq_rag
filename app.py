@@ -5,6 +5,18 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain_core.prompts import PromptTemplate
 
+
+# --- DEBUG KISMI BAŞLANGIÇ ---
+st.write("📂 Mevcut Çalışma Dizini:", os.getcwd())
+try:
+    st.write("📂 Ana Dizindeki Dosyalar:", os.listdir("."))
+    if os.path.exists("vector_deposu"):
+        st.write("📂 'vector_deposu' İçeriği:", os.listdir("vector_deposu"))
+    else:
+        st.error("🚨 'vector_deposu' klasörü BULUNAMADI!")
+except Exception as e:
+    st.error(f"Hata: {e}")
+# --- DEBUG KISMI BİTİŞ ---
 # Sayfa Ayarları
 st.set_page_config(page_title="RAG Asistanı")
 st.title("RAG Asistanı")
@@ -70,4 +82,5 @@ if prompt := st.chat_input("Sorunuzu yazın..."):
         
         st.write(response.content)
         st.session_state.messages.append({"role": "assistant", "content": response.content})
+
 
